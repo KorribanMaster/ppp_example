@@ -1,20 +1,23 @@
-use std::io;
-use std::os::fd::AsFd;
-use std::os::fd::BorrowedFd;
-use std::os::fd::RawFd;
-use std::os::fd::AsRawFd;
+use async_io::IoSafe;
 use nix::errno::Errno;
 use nix::fcntl::OFlag;
 use nix::sys::termios;
+use std::io;
+use std::os::fd::AsFd;
+use std::os::fd::AsRawFd;
+use std::os::fd::BorrowedFd;
+use std::os::fd::RawFd;
 use std::sync::{Mutex, MutexGuard};
-use async_io::IoSafe;
 
 pub struct SerialPort {
     fd: Mutex<RawFd>,
 }
 
 impl SerialPort {
-    pub fn new<P: ?Sized + nix::NixPath>(path: &P, baudrate: termios::BaudRate) -> io::Result<Self> {
+    pub fn new<P: ?Sized + nix::NixPath>(
+        path: &P,
+        baudrate: termios::BaudRate,
+    ) -> io::Result<Self> {
         let fd: RawFd = nix::fcntl::open(
             path,
             OFlag::O_RDWR | OFlag::O_NOCTTY | OFlag::O_NONBLOCK,
@@ -39,7 +42,7 @@ impl SerialPort {
         termios::tcsetattr(fd, termios::SetArg::TCSANOW, &cfg).map_err(to_io_error)?;
         termios::tcflush(fd, termios::FlushArg::TCIOFLUSH).map_err(to_io_error)?;
         let mutex = Mutex::new(fd);
-        Ok(Self { fd:mutex })
+        Ok(Self { fd: mutex })
     }
 }
 
@@ -51,15 +54,14 @@ impl AsRawFd for SerialPort {
 
 impl AsFd for SerialPort {
     fn as_fd(&self) -> std::os::unix::prelude::BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(*self.fd.lock().unwrap())}
+        unsafe { BorrowedFd::borrow_raw(*self.fd.lock().unwrap()) }
     }
 }
 
 impl SerialPort {
-pub fn lock(&self) -> MutexGuard<RawFd> {
+    pub fn lock(&self) -> MutexGuard<RawFd> {
         self.fd.lock().unwrap() // You should handle the error properly in your code
     }
-
 }
 impl io::Read for SerialPort {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
@@ -67,7 +69,7 @@ impl io::Read for SerialPort {
     }
 }
 
-unsafe impl IoSafe for SerialPort{}
+unsafe impl IoSafe for SerialPort {}
 
 impl io::Write for SerialPort {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
