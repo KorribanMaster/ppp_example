@@ -81,6 +81,7 @@ impl io::Write for SerialPort {
     }
 }
 
+
 fn to_io_error(e: Errno) -> io::Error {
     e.into()
 }

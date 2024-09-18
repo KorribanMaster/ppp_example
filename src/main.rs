@@ -10,23 +10,29 @@
 #![allow(async_fn_in_trait)]
 
 mod serial_port;
-
+mod commands;
+mod responses;
+use std::io::Write;
+use std::io::Read;
 use async_io::Async;
+use atat::blocking::AtatClient;
 use clap::Parser;
 use embassy_executor::{Executor, Spawner};
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{Config, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StackResources};
 use embassy_net_ppp::Runner;
-use embedded_io_async::Write;
+use embedded_io_async::Write as AsyncWrite;
+use embassy_time::{Duration, Timer};
+use futures::future::Shared;
 use futures::io::BufReader;
 use heapless::Vec;
 use log::*;
 use nix::sys::termios;
 use rand_core::{OsRng, RngCore};
 use static_cell::StaticCell;
-
+use embassy_sync::signal::Signal;
 use crate::serial_port::SerialPort;
-
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 #[derive(Parser)]
 #[clap(version = "1.0")]
 struct Opts {
@@ -35,16 +41,42 @@ struct Opts {
     device: String,
 }
 
+static SHARED: Signal<CriticalSectionRawMutex, u32> = Signal::new();
+
 #[embassy_executor::task]
 async fn net_task(stack: &'static Stack<embassy_net_ppp::Device<'static>>) -> ! {
     stack.run().await
+}
+
+const INGRESS_BUF_SIZE: usize = 1024;
+
+#[embassy_executor::task]
+async fn atat_task(
+    port: SerialPort,
+) -> () {
+    static RES_SLOT: atat::ResponseSlot<INGRESS_BUF_SIZE> = atat::ResponseSlot::new();
+    static BUF: StaticCell<[u8; 1024]> = StaticCell::new();
+    let port = embedded_io_adapters::std::FromStd::new(port);
+    let mut client = atat::blocking::Client::new(
+        port,
+        &RES_SLOT,
+        BUF.init([0; 1024]),
+        atat::Config::default(),
+    );
+    let command = commands::VerifyComIsWorking {};
+    let response = client.send(&command);
+     if (response.is_ok()) {
+        info!("Communication with Modem is working");
+     }
+    drop(client);
+    SHARED.signal(1);
 }
 
 #[embassy_executor::task]
 async fn ppp_task(
     stack: &'static Stack<embassy_net_ppp::Device<'static>>,
     mut runner: Runner<'static>,
-    port: SerialPort,
+    port: SerialPort 
 ) -> ! {
     let port = Async::new(port).unwrap();
     let port = BufReader::new(port);
@@ -76,7 +108,6 @@ async fn ppp_task(
         .unwrap();
     unreachable!()
 }
-
 #[embassy_executor::task]
 async fn main_task(spawner: Spawner) {
     let opts: Opts = Opts::parse();
@@ -105,6 +136,17 @@ async fn main_task(spawner: Spawner) {
         seed,
     ));
 
+    // Configure modem
+    spawner.spawn(atat_task(port)).unwrap();
+    let result = SHARED.wait().await;
+    if result > 0 {
+        error!("Failed to configure modem ({})", result);
+        panic!("abort");
+    }
+    //If we reach hear modem is configured
+    // Open serial port again since it was moved to atat task
+    let baudrate = termios::BaudRate::B115200;
+    let port = SerialPort::new(opts.device.as_str(), baudrate).unwrap();
     // Launch network task
     spawner.spawn(net_task(stack)).unwrap();
     spawner.spawn(ppp_task(stack, runner, port)).unwrap();

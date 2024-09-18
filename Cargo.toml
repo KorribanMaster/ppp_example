@@ -11,7 +11,7 @@ embassy-net = { version = "0.4.0", features=[ "std",  "log", "medium-ethernet", 
 embassy-net-tuntap = { version = "0.1.0" }
 embassy-net-ppp = { version = "0.1.0", features = ["log"]}
 embedded-io-async = { version = "0.6.1" }
-embedded-io-adapters = { version = "0.6.1", features = ["futures-03"] }
+embedded-io-adapters = { version = "0.6.1", features = ["futures-03", "std"] }
 critical-section = { version = "1.1", features = ["std"] }
 
 async-io = "2.3.4"
@@ -21,8 +21,17 @@ log = "0.4.14"
 nix = { version = "0.26.4", features = [ "acct", "aio", "dir", "env", "event", "feature", "fs", "hostname", "inotify", "ioctl", "kmod", "mman", "mount", "mqueue", "net", "personality", "poll", "process", "pthread", "ptrace", "quota", "reboot", "resource", "sched", "signal", "socket", "term", "time", "ucontext", "uio", "user", "zerocopy"]}
 clap = { version = "4.5.17", features = ["derive"] }
 rand_core = { version = "0.6.3", features = ["std"] }
-heapless = { version = "0.8", default-features = false }
+heapless = { version = "0.8", default-features = false, features = ["serde"] }
 static_cell = "2"
+atat = { version = "0.23.0", features = ["derive", "std", "heapless"] }
+linux-embedded-hal = "0.4.0"
+embassy-futures = { version = "0.1.1", features = ["log"] }
+defmt = {version = "0.3.8", optional = true}
+heapless-bytes = "0.4.0"
 
 [profile.release]
 debug = 2
+
+[features]
+defmt = ["atat/defmt", "dep:defmt"]
+log = []
